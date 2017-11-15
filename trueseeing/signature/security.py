@@ -18,7 +18,7 @@
 # Issues:
 # * Security: Escaratable cross-site scripting (API < 17) (WIP: API version conditions)
 # * Security: TLS interception
-# * Security: Arbitrary WebView Overwrite
+# * Security: Tamperable WebViews
 # * Security: Insecure permissions
 # * Security: Insecure libraries
 
@@ -42,6 +42,7 @@ log = logging.getLogger(__name__)
 
 class SecurityFilePermissionDetector(Detector):
   option = 'security-file-permission'
+  description = 'Detects insecure file creation'
   cvss = 'CVSS:3.0/AV:L/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:N/'
 
   def do_detect(self):
@@ -63,6 +64,7 @@ class SecurityFilePermissionDetector(Detector):
 
 class SecurityTlsInterceptionDetector(Detector):
   option = 'security-tls-interception'
+  description = 'Detects certificate (non-)pinning'
   cvss = 'CVSS:3.0/AV:A/AC:H/PR:H/UI:R/S:U/C:N/I:H/A:N/'
 
   def do_detect(self):
@@ -140,10 +142,10 @@ class LayoutSizeGuesser:
           return float(re.sub(r'di?p$', '', x)) / float(dp)
         except ValueError:
           try:
-            log.debug("check_security_arbitrary_webview_overwrite: guessed_size: guessed_dp: warning: ignoring non-dp suffix ({!s})".format(x))
+            log.debug("layout_guesser: guessed_size: guessed_dp: warning: ignoring non-dp suffix ({!s})".format(x))
             return float(re.sub(r'[^0-9-]', '', x)) / float(dp)
           except ValueError:
-            log.debug("check_security_arbitrary_webview_overwrite: guessed_size: guessed_dp: warning: ignoring unknown dimension")
+            log.debug("layout_guesser: guessed_size: guessed_dp: warning: ignoring unknown dimension")
             return 0.0
       else:
         return dp
@@ -159,13 +161,24 @@ class LayoutSizeGuesser:
 
     dps = dps_from_modifiers(modifiers_in(path))
     for e in self_and_containers_of(t):
-      if any(is_bound(x) for x in (width_of(e), height_of(e))):
-        return guessed_dp(width_of(e), dps[0]) * guessed_dp(height_of(e), dps[1])
+      try:
+        width, height = width_of(e), height_of(e)
+      except KeyError:
+        try:
+          log.warning('layout_guesser: guessed_size: ignoring improper webview declaration ({0})'.format(e.attrib['{0}id'.format(self.xmlns_android)]))
+          return 0.0
+        except KeyError:
+          log.warning('layout_guesser: guessed_size: ignoring improper webview declaration')
+          return 0.0
+      else:
+        if any(is_bound(x) for x in (width_of(e), height_of(e))):
+          return guessed_dp(width_of(e), dps[0]) * guessed_dp(height_of(e), dps[1])
     else:
       return 1.0
 
-class SecurityArbitraryWebViewOverwriteDetector(Detector):
-  option = 'security-arbitrary-webview-overwrite'
+class SecurityTamperableWebViewDetector(Detector):
+  option = 'security-tamperable-webview'
+  description = 'Detects tamperable WebView'
   cvss1 = 'CVSS:3.0/AV:A/AC:H/PR:N/UI:R/S:C/C:N/I:H/A:N/'
   cvss2 = 'CVSS:3.0/AV:A/AC:L/PR:N/UI:R/S:C/C:N/I:H/A:N/'
 
@@ -194,7 +207,7 @@ class SecurityArbitraryWebViewOverwriteDetector(Detector):
                 detector_id=self.option,
                 confidence=IssueConfidence.TENTATIVE,
                 cvss3_vector=self.cvss1,
-                summary='arbitrary WebView content overwrite',
+                summary='tamperable webview',
                 info1='{0} (score: {1:.02f})'.format(t.attrib['{0}id'.format(self.xmlns_android)], size),
                 source=self.context.source_name_of_disassembled_resource(fn)
               )
@@ -208,7 +221,7 @@ class SecurityArbitraryWebViewOverwriteDetector(Detector):
               detector_id=self.option,
               confidence=IssueConfidence.FIRM,
               cvss3_vector=self.cvss2,
-              summary='arbitrary WebView content overwrite with URL',
+              summary='tamperable webview with URL',
               info1=v,
               source=store.query().qualname_of(op)
             )
@@ -218,6 +231,7 @@ class SecurityArbitraryWebViewOverwriteDetector(Detector):
 
 class SecurityInsecureWebViewDetector(Detector):
   option = 'security-insecure-webview'
+  description = 'Detects insecure WebView'
   cvss = 'CVSS:3.0/AV:A/AC:H/PR:N/UI:R/S:C/C:H/I:H/A:H/'
 
   xmlns_android = '{http://schemas.android.com/apk/res/android}'
@@ -287,6 +301,7 @@ class SecurityInsecureWebViewDetector(Detector):
 
 class FormatStringDetector(Detector):
   option = 'security-format-string'
+  description = 'Detects format string usages'
   cvss = 'CVSS:3.0/AV:P/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N/'
 
   def analyzed(self, x):
@@ -319,6 +334,7 @@ class FormatStringDetector(Detector):
 
 class LogDetector(Detector):
   option = 'security-log'
+  description = 'Detects logging activities'
   cvss = 'CVSS:3.0/AV:P/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N/'
 
   def do_detect(self):
